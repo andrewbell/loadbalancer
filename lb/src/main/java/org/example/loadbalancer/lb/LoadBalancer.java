@@ -44,8 +44,6 @@ public class LoadBalancer {
 
     void run() {
 
-        System.out.printf("Starting load balancer on port %d%n", config.getPort());
-
         // Check if any servers are offline before starting the LB
         pingAllServers(config.getServers());
 
@@ -197,7 +195,7 @@ public class LoadBalancer {
     }
 
     /**
-     * Set the ping routine, can be replaced to easier unit testing
+     * Set the ping routine, can be replaced for easier unit testing
      * @param pinger A LoadBalancerPing instance
      */
     void setLoadBalancerPing(LoadBalancerPing pinger) {

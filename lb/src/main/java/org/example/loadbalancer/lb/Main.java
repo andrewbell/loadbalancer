@@ -14,29 +14,33 @@ import static org.example.loadbalancer.lb.util.Helper.getInetSocketAddress;
 // main() entry point for load balancer with argument parsing
 public class Main {
     public static void main(String[] args) {
-        int port = 8080;
-        if (args.length >= 1) {
-            port = parseArgument(args[0], port);
+
+        if (args.length != 2) {
+            System.out.println("Usage: lb <LISTEN_PORT> <COMMA_SEPARATED_HOST_AND_PORTS>");
+            return;
         }
+
+        final int port = parseIntArgument(args[0], 8080);
+        final List<InetSocketAddress> servers = parseServers(args[1]);
 
         // For now, we just create the config directly, in a production environment this
         // would be pulled from a config file or server
         final LoadBalancerConfig config = new LoadBalancerConfig();
         config.setPort(port);
         config.setLoadBalancerStrategyType(LoadBalancerStrategyType.ROUND_ROBIN);
-        final List<InetSocketAddress> servers = new ArrayList<>();
-        servers.add(getInetSocketAddress("127.0.0.1:8050"));
-        servers.add(getInetSocketAddress("127.0.0.1:8051"));
         config.setServers(servers);
 
         // Get the class that will do the server routing
         final LoadBalancerStrategy lbStrategy = LoadBalancerStrategyFactory.createLoadBalancerStrategy(config.getLoadBalancerStrategyType(), config.getServers());
         final SocketHandlerThreadFactory factory = new SocketHandlerThreadFactory();
 
+        System.out.printf("Starting load balancer on port %d%n", config.getPort());
+        config.getServers().forEach(server -> System.out.println("BE server: " + server));
+
         new LoadBalancer(config, lbStrategy, factory).run();
     }
 
-    private static int parseArgument(String portArg, int defaultPort) {
+    private static int parseIntArgument(String portArg, int defaultPort) {
         try {
             return Integer.parseInt(portArg);
         } catch (NumberFormatException e) {
@@ -44,4 +48,13 @@ public class Main {
             return defaultPort;
         }
     }
+
+    private static List<InetSocketAddress> parseServers(String serverArgs) {
+        final List<InetSocketAddress> servers = new ArrayList<>();
+        for (String nextServer: serverArgs.split(",")) {
+            servers.add(getInetSocketAddress(nextServer));
+        }
+        return servers;
+    }
+
 }
