@@ -28,14 +28,18 @@ class LoadBalancerTest {
     void testLoadBalancerWithRoundRobin() throws Exception {
         final LoadBalancerConfig config = getLoadBalancerConfig();
         final LoadBalancerStrategy rr = new RoundRobinLoadBalancerStrategy(config.getServers());
+
+        // create several mocks
         final SocketHandlerThreadAbstractFactory mockFactory = mock(SocketHandlerThreadAbstractFactory.class);
         final SocketHandler mockThread = mock(SocketHandler.class);
         final LoadBalancerPing mockPing = mock(LoadBalancerPing.class);
 
+        // set their expectations
         when(mockThread.runThread()).thenReturn(true);
         when(mockFactory.createSocketHandlerThread(any(Socket.class), any(InetSocketAddress.class), anyInt())).thenReturn(mockThread);
         when(mockPing.pingServer(any(InetSocketAddress.class), anyInt())).thenReturn(true);
 
+        // run the test, inject the mock dependencies
         final LoadBalancer lb = new LoadBalancer(config, rr, mockFactory);
         lb.setLoadBalancerPing(mockPing);
 

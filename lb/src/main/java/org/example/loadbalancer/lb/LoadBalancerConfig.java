@@ -5,13 +5,14 @@ import org.example.loadbalancer.lb.strategy.LoadBalancerStrategyType;
 import java.net.InetSocketAddress;
 import java.util.List;
 
-// Holds config needed by LB, a future addition might be to include a Lombok builder to make it easier to instantiate
+// Holds config needed by LB, a future addition might be to include a Lombok builder to improve readability
 public class LoadBalancerConfig {
 
     private int port;
     private LoadBalancerStrategyType loadBalancerStrategyType;
     private List<InetSocketAddress> servers;
 
+    // Harcoded for now, but would come from a config file and would be tuned after load testing
     private int backendPingIntervalMs = 15_000;
     private int backendPingTimeoutMs = 500;
     private int bufferSizeBytes = 128 * 1024;

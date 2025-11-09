@@ -17,7 +17,7 @@ import static org.example.loadbalancer.lb.util.Helper.getRemoteAddress;
  * No routing is done here - its primary purpose is to stream bytes from the client port:IP to the target server port:IP
  *
  * Since we're a level 4 load balancer, we don't assume any protocols either. It could be TLS, raw HTTP, telnet or
- * anything else. We are transferring raw bytes and agnostic to what the socket holds.
+ * anything else. We are transferring raw bytes and are agnostic to what the socket holds.
  */
 public class SocketHandlerThread implements SocketHandler {
 
@@ -44,8 +44,7 @@ public class SocketHandlerThread implements SocketHandler {
         System.out.println("a client has connected: " + clientSocketChannel.getRemoteAddress());
     }
 
-    private void handleConnect(Selector selector, SelectionKey key) throws IOException {
-        final SocketChannel targetChannel = (SocketChannel) key.channel();
+    private void handleConnect(Selector selector, SelectionKey key, SocketChannel targetChannel) throws IOException {
 
         if (targetChannel.isConnectionPending()) {
             targetChannel.finishConnect();
@@ -56,8 +55,7 @@ public class SocketHandlerThread implements SocketHandler {
 
     }
 
-    private boolean handleRead(Selector selector, SelectionKey key) throws IOException {
-        final SocketChannel clientChannel = (SocketChannel) key.channel();
+    private boolean handleRead(Selector selector, SelectionKey key, SocketChannel clientChannel) throws IOException {
 
         clientBuffer.clear();
 
@@ -76,8 +74,7 @@ public class SocketHandlerThread implements SocketHandler {
         return false; // not end of stream
     }
 
-    private void handleWrite(Selector selector, SelectionKey key) throws IOException {
-        final SocketChannel targetChannel = (SocketChannel) key.channel();
+    private void handleWrite(Selector selector, SelectionKey key, SocketChannel targetChannel) throws IOException {
 
         if (clientBuffer.hasRemaining()) {
             targetChannel.write(clientBuffer);
@@ -93,9 +90,6 @@ public class SocketHandlerThread implements SocketHandler {
     }
 
     public boolean runThread() {
-
-        // wait for source socket to go into a readable state
-
         System.out.println("Accepting connection...");
 
         try {
@@ -106,7 +100,6 @@ public class SocketHandlerThread implements SocketHandler {
             boolean endOfStream = false;
             do {
                 selector.select();
-
                 final Iterator<SelectionKey> keyIterator = selector.selectedKeys().iterator();
 
                 while (keyIterator.hasNext()) {
@@ -115,16 +108,14 @@ public class SocketHandlerThread implements SocketHandler {
 
                     if (key.isValid()) {
                         if (key.isConnectable()) {
-                            handleConnect(selector, key);
+                            handleConnect(selector, key, (SocketChannel) key.channel());
                         } else if (key.isReadable()) {
-                            endOfStream = handleRead(selector, key);
+                            endOfStream = handleRead(selector, key, (SocketChannel) key.channel());
                         } else if (key.isWritable()) {
-                            handleWrite(selector, key);
+                            handleWrite(selector, key, (SocketChannel) key.channel());
                         }
                     }
-
                 }
-
             } while (!endOfStream);
 
             return true;

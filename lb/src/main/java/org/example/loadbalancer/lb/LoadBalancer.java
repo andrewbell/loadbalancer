@@ -34,6 +34,7 @@ public class LoadBalancer {
     // Ping handler used to detect back-end servers, this can be replaced by unit tests
     private LoadBalancerPing pinger = new Ping();
 
+    // Used by unit test to control flow
     private boolean abort = false;
 
     public LoadBalancer(LoadBalancerConfig config, LoadBalancerStrategy lbStrategy, SocketHandlerThreadAbstractFactory factory) {
@@ -71,7 +72,7 @@ public class LoadBalancer {
     private void processClientConnections(LoadBalancerStrategy lbStrategy, ServerSocket serverSocket) throws IOException {
 
         // Check unhealthy servers every few seconds
-        scheduler.scheduleAtFixedRate(this::pingUnhealthyServers,
+        scheduler.scheduleAtFixedRate(() -> pingAllServers(config.getServers()),
                 config.getBackendPingIntervalMs(),
                 config.getBackendPingIntervalMs(),
                 TimeUnit.MILLISECONDS);
@@ -115,7 +116,7 @@ public class LoadBalancer {
     }
 
     /**
-     * Check if the given server was previsouly marked as unhealthy
+     * Check if the given server was previously marked as unhealthy
      *
      * @param targetServer server to check
      * @return true for healthy
@@ -156,23 +157,11 @@ public class LoadBalancer {
     }
 
     /**
-     * Check the list of unhealthy servers to see if any have came online
-     */
-    private void pingUnhealthyServers() {
-
-        System.out.printf("Checking for unhealthy servers%n");
-
-        for (Map.Entry<InetSocketAddress, Long> entry : unhealthyServers.entrySet()) {
-            final InetSocketAddress address = entry.getKey();
-            markServerOnlineOrOffline(address);
-        }
-    }
-
-    /**
      * Check all the given servers and mark them online or unhealthy.
      * @param servers List of servers provided by config
      */
     private void pingAllServers(List<InetSocketAddress> servers) {
+        System.out.printf("Checking for unhealthy servers%n");
         for (InetSocketAddress address : servers) {
             markServerOnlineOrOffline(address);
         }
@@ -202,6 +191,10 @@ public class LoadBalancer {
         this.pinger = pinger;
     }
 
+    /**
+     * Force the LB to quit
+     * @param abort state to set abort boolean to
+     */
     void setAbort(boolean abort) {
         this.abort = abort;
     }
