@@ -1,13 +1,11 @@
 package org.example.loadbalancer.lb.socket;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
-import java.nio.ByteBuffer;
-import java.nio.channels.SelectionKey;
-import java.nio.channels.Selector;
-import java.nio.channels.SocketChannel;
-import java.util.Iterator;
 
 import static org.example.loadbalancer.lb.util.Helper.closeChannel;
 import static org.example.loadbalancer.lb.util.Helper.getRemoteAddress;
@@ -22,110 +20,86 @@ import static org.example.loadbalancer.lb.util.Helper.getRemoteAddress;
 public class SocketHandlerThread implements SocketHandler {
 
     private final InetSocketAddress targetServer;
-    private final ByteBuffer clientBuffer;
-    private final SocketChannel clientSocketChannel;
-    private SocketChannel targetSocketChannel;
+    private final Socket clientSocket;
+    private final int bufferSizeBytes;
 
     public SocketHandlerThread(Socket clientSocket, InetSocketAddress targetServer, int bufferSizeBytes) {
-        this.clientSocketChannel = clientSocket.getChannel();
+        this.clientSocket = clientSocket;
         this.targetServer = targetServer;
-        this.clientBuffer = ByteBuffer.allocate(bufferSizeBytes);
-    }
-
-    private void handleAccept(Selector selector) throws IOException {
-        clientSocketChannel.configureBlocking(false);
-
-        targetSocketChannel = SocketChannel.open();
-        targetSocketChannel.configureBlocking(false);
-        targetSocketChannel.connect(targetServer);
-        targetSocketChannel.register(selector, SelectionKey.OP_CONNECT, clientSocketChannel);
-
-        clientSocketChannel.register(selector, SelectionKey.OP_READ);
-        System.out.println("a client has connected: " + clientSocketChannel.getRemoteAddress());
-    }
-
-    private void handleConnect(Selector selector, SelectionKey key, SocketChannel targetChannel) throws IOException {
-
-        if (targetChannel.isConnectionPending()) {
-            targetChannel.finishConnect();
-            System.out.println("connecting to backend server: " + targetChannel.getRemoteAddress());
-
-            targetChannel.register(selector, SelectionKey.OP_READ);
-        }
-
-    }
-
-    private boolean handleRead(Selector selector, SelectionKey key, SocketChannel clientChannel) throws IOException {
-
-        clientBuffer.clear();
-
-        final int bytesRead = clientChannel.read(clientBuffer);
-        if (bytesRead < 0) {
-            return true; // end of stream
-        }
-
-        if (bytesRead > 0) {
-            clientBuffer.flip();
-            final SelectionKey targetKey = targetSocketChannel.keyFor(selector);
-            targetKey.interestOps(targetKey.interestOps() | SelectionKey.OP_WRITE);
-            selector.wakeup();
-        }
-
-        return false; // not end of stream
-    }
-
-    private void handleWrite(Selector selector, SelectionKey key, SocketChannel targetChannel) throws IOException {
-
-        if (clientBuffer.hasRemaining()) {
-            targetChannel.write(clientBuffer);
-        }
-
-        if (!clientBuffer.hasRemaining()) {
-            key.interestOps(key.interestOps() & ~SelectionKey.OP_WRITE);
-            clientBuffer.clear();
-            final SelectionKey sourceKey = clientSocketChannel.keyFor(selector);
-            sourceKey.interestOps(sourceKey.interestOps() | SelectionKey.OP_READ);
-        }
-
+        this.bufferSizeBytes = bufferSizeBytes;
     }
 
     public boolean runThread() {
-        System.out.println("Accepting connection...");
+        Socket serverSocket = null;
+        InputStream clientReader = null;
+        OutputStream clientWriter = null;
+        InputStream serverReader = null;
+        OutputStream serverWriter = null;
 
         try {
-            final Selector selector = Selector.open();
+            String clientIp = clientSocket.getRemoteSocketAddress().toString();
+            System.out.println("A client has connected: " + clientIp);
 
-            handleAccept(selector);
+            clientReader = clientSocket.getInputStream();
+            clientWriter = clientSocket.getOutputStream();
 
-            boolean endOfStream = false;
-            do {
-                selector.select();
-                final Iterator<SelectionKey> keyIterator = selector.selectedKeys().iterator();
+            final byte[] clientData = readBytes(clientReader);
+            if (clientData == null) {
+                System.out.println("ERROR: end of client stream");
+                return false;
+            }
 
-                while (keyIterator.hasNext()) {
-                    final SelectionKey key = keyIterator.next();
-                    keyIterator.remove();
+            System.out.println(clientIp + " connecting to backend server: " + targetServer);
 
-                    if (key.isValid()) {
-                        if (key.isConnectable()) {
-                            handleConnect(selector, key, (SocketChannel) key.channel());
-                        } else if (key.isReadable()) {
-                            endOfStream = handleRead(selector, key, (SocketChannel) key.channel());
-                        } else if (key.isWritable()) {
-                            handleWrite(selector, key, (SocketChannel) key.channel());
-                        }
-                    }
-                }
-            } while (!endOfStream);
+            serverSocket = new Socket(targetServer.getHostName(), targetServer.getPort());
+
+            System.out.println("Connected to " + targetServer);
+
+            serverReader = serverSocket.getInputStream();
+            serverWriter = serverSocket.getOutputStream();
+            serverWriter.write(clientData, 0, clientData.length);
+            serverWriter.flush();
+
+            byte[] serverRespData = readBytes(serverReader);
+            if (serverRespData == null) {
+                System.out.println("ERROR: end of server stream");
+                return false;
+            }
+
+            clientWriter.write(serverRespData, 0, serverRespData.length);
+            clientWriter.flush();
 
             return true;
         } catch (IOException e) {
-            System.out.printf("Error connecting socket %s to %s (%s)%n", getRemoteAddress(clientSocketChannel), targetServer, e.getMessage());
+            System.out.printf("Error connecting socket %s to %s (%s)%n", getRemoteAddress(clientSocket.getChannel()), targetServer, e.getMessage());
             return false;
-
         } finally {
-            closeChannel(this.clientSocketChannel);
-            closeChannel(targetSocketChannel);
+            closeChannel(serverSocket);
+            closeChannel(clientSocket);
+
+            closeChannel(clientReader);
+            closeChannel(clientWriter);
+            closeChannel(serverReader);
+            closeChannel(serverWriter);
         }
+    }
+
+    private byte[] readBytes(InputStream incomingStream) throws IOException {
+
+        byte[] buf = new byte[bufferSizeBytes];
+
+        try (ByteArrayOutputStream stream = new ByteArrayOutputStream()) {
+            int len = incomingStream.read(buf);
+            if (len < 0) {
+                // end of stream
+                return null;
+            }
+
+            if (len > 0) {
+                stream.write(buf, 0, len);
+                stream.flush();
+            }
+        }
+        return buf;
     }
 }
